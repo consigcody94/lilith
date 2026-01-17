@@ -12,7 +12,14 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
-import torch
+# Make torch optional for demo mode
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
+
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -66,7 +73,7 @@ async def lifespan(app: FastAPI):
 
             _forecaster = Forecaster.from_pretrained(
                 checkpoint_path,
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device="cuda" if TORCH_AVAILABLE and torch.cuda.is_available() else "cpu",
                 encoder_path=encoder_path,
                 stations_path=stations_path,
             )
@@ -131,7 +138,7 @@ async def health_check():
     return HealthResponse(
         status="healthy" if _forecaster is not None else "degraded",
         model_loaded=_forecaster is not None,
-        gpu_available=torch.cuda.is_available(),
+        gpu_available=TORCH_AVAILABLE and torch.cuda.is_available(),
         version="1.0.0",
     )
 

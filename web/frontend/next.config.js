@@ -1,11 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Enable experimental features
-  experimental: {
-    // Enable server actions
-    serverActions: true,
-  },
   // Environment variables
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
