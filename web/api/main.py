@@ -178,8 +178,10 @@ async def create_forecast(request: ForecastRequest):
 
     # Check if model is loaded
     if _forecaster is None:
-        # Return demo response
-        return _generate_demo_forecast(request)
+        # Return demo response with prediction storage
+        response = _generate_demo_forecast(request)
+        _store_predictions_from_response(request.latitude, request.longitude, response)
+        return response
 
     try:
         # Use SimpleForecaster interface
@@ -214,7 +216,7 @@ async def create_forecast(request: ForecastRequest):
         # Get nearby stations for display
         nearby_stations = _get_nearby_stations(request.latitude, request.longitude)
 
-        return ForecastResponse(
+        result = ForecastResponse(
             location=Location(latitude=request.latitude, longitude=request.longitude),
             generated_at=response['generated_at'],
             model_version=f"SimpleLILITH v1 (RMSE: {response.get('model_rmse', 'N/A')}°C)",
@@ -222,6 +224,11 @@ async def create_forecast(request: ForecastRequest):
             forecasts=forecasts,
             nearby_stations=nearby_stations,
         )
+
+        # Store predictions for accuracy tracking
+        _store_predictions_from_response(request.latitude, request.longitude, result)
+
+        return result
 
     except Exception as e:
         logger.exception(f"Forecast error: {e}")
@@ -407,6 +414,9 @@ async def get_accuracy_report(
     Compares past predictions to actual observations and calculates
     accuracy metrics like MAE, RMSE, and accuracy by lead time.
     """
+    # Auto-verify any unverified predictions that can be checked
+    _verify_predictions_with_actuals()
+
     return _generate_accuracy_report(latitude, longitude, days_back)
 
 
@@ -714,6 +724,32 @@ def _generate_demo_hourly_forecast(request: HourlyForecastRequest) -> HourlyFore
     )
 
 
+def _store_predictions_from_response(lat: float, lon: float, response: ForecastResponse) -> None:
+    """Store predictions from a forecast response for accuracy tracking."""
+    import datetime
+
+    location_name = f"{lat:.2f}, {lon:.2f}"
+
+    # Only store first 14 days of predictions (most relevant for verification)
+    for i, forecast in enumerate(response.forecasts[:14]):
+        # Create a unique key based on location and target date
+        key = f"{lat:.4f}_{lon:.4f}_{forecast.date}"
+
+        # Only store if we don't already have a prediction for this location/date
+        if key not in _predictions:
+            _store_prediction(
+                lat=lat,
+                lon=lon,
+                location_name=location_name,
+                target_date=forecast.date,
+                temp_max=forecast.temperature_max,
+                temp_min=forecast.temperature_min,
+                precipitation=forecast.precipitation,
+                precip_prob=forecast.precipitation_probability,
+                lead_days=i + 1,
+            )
+
+
 def _store_prediction(
     lat: float, lon: float, location_name: str,
     target_date: str, temp_max: float, temp_min: float,
@@ -726,6 +762,8 @@ def _store_prediction(
     global _prediction_counter
     _prediction_counter += 1
 
+    # Use a key that allows us to track unique predictions
+    key = f"{lat:.4f}_{lon:.4f}_{target_date}"
     prediction_id = f"pred_{uuid.uuid4().hex[:8]}"
 
     record = PredictionRecord(
@@ -741,7 +779,7 @@ def _store_prediction(
         lead_days=lead_days,
     )
 
-    _predictions[prediction_id] = record
+    _predictions[key] = record
     return prediction_id
 
 
