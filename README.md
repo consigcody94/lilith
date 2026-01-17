@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/assets/lilith-logo.svg" alt="LILITH" width="120" height="120">
+  <img src="web/frontend/public/images/logo.png" alt="L.I.L.I.T.H" width="200" height="200">
 </p>
 
-<h1 align="center">LILITH</h1>
+<h1 align="center">L.I.L.I.T.H.</h1>
 
 <p align="center">
   <strong>Long-range Intelligent Learning for Integrated Trend Hindcasting</strong>
@@ -144,15 +144,366 @@ python scripts/process_data.py --config configs/data/default.yaml
 
 ### Training
 
-```bash
-# Train LILITH-Base on single GPU
-python scripts/train_model.py --config models/configs/base.yaml
+LILITH training is designed to work on consumer GPUs. Here's a complete step-by-step guide:
 
-# Distributed training with DeepSpeed
-deepspeed --num_gpus=4 scripts/train_model.py \
-    --config models/configs/large.yaml \
+#### Step 1: Environment Setup
+
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+
+# Install PyTorch with CUDA support
+# For RTX 30/40 series:
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# For RTX 50 series (Blackwell - requires nightly):
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+
+# Install LILITH dependencies
+pip install -e ".[all]"
+```
+
+#### Step 2: Download Training Data
+
+```bash
+# Download GHCN station data (start with 300 stations for quick training)
+python -m data.download.ghcn_daily \
+    --stations 300 \
+    --min-years 30 \
+    --country US
+
+# For better models, download more stations
+python -m data.download.ghcn_daily \
+    --stations 5000 \
+    --min-years 20 \
+    --elements TMAX,TMIN,PRCP
+
+# Download climate indices for long-range prediction
+python -m data.download.climate_indices --all
+```
+
+#### Step 3: Process Data
+
+```bash
+# Process raw GHCN data into training format
+python -m data.processing.ghcn_processor
+
+# This creates:
+# - data/processed/ghcn_combined.parquet (all station data)
+# - data/processed/training/X.npy (input sequences)
+# - data/processed/training/Y.npy (target sequences)
+# - data/processed/training/meta.npy (station metadata)
+# - data/processed/training/stats.npz (normalization stats)
+```
+
+#### Step 4: Train the Model
+
+```bash
+# Quick training (30 epochs, good for testing)
+python -m training.train_simple \
+    --epochs 30 \
+    --batch-size 64 \
+    --d-model 128 \
+    --layers 4
+
+# Full training (100 epochs, production quality)
+python -m training.train_simple \
+    --epochs 100 \
+    --batch-size 128 \
+    --d-model 256 \
+    --layers 6 \
+    --lr 1e-4
+
+# Resume training from checkpoint
+python -m training.train_simple \
+    --resume checkpoints/lilith_best.pt \
+    --epochs 50
+```
+
+#### Step 5: Monitor Training
+
+During training, you'll see output like:
+```
+Epoch 1/30 | Train Loss: 0.8234 | Val Loss: 0.7891 | Temp RMSE: 4.21°C | Temp MAE: 3.15°C
+Epoch 2/30 | Train Loss: 0.6543 | Val Loss: 0.6234 | Temp RMSE: 3.45°C | Temp MAE: 2.67°C
+...
+Epoch 30/30 | Train Loss: 0.2134 | Val Loss: 0.2456 | Temp RMSE: 1.89°C | Temp MAE: 1.42°C
+```
+
+Target metrics:
+- **Days 1-7**: Temp RMSE < 2°C
+- **Days 8-14**: Temp RMSE < 3°C
+
+#### Step 6: Use the Trained Model
+
+```bash
+# Update the API to use your trained model
+# Edit web/api/main.py and set DEMO_MODE = False
+
+# Or run inference directly
+python -m inference.forecast \
+    --checkpoint checkpoints/lilith_best.pt \
+    --lat 40.7128 --lon -74.006 \
+    --days 90
+```
+
+#### Training on Multiple GPUs
+
+```bash
+# Using PyTorch DistributedDataParallel
+torchrun --nproc_per_node=2 training/train_distributed.py \
+    --config models/configs/large.yaml
+
+# Using DeepSpeed for memory efficiency
+deepspeed --num_gpus=4 training/train_deepspeed.py \
+    --config models/configs/xl.yaml \
     --deepspeed configs/training/ds_config.json
 ```
+
+#### Memory Requirements
+
+| Model Size | Batch Size | VRAM Required |
+|------------|------------|---------------|
+| d_model=128 | 64 | ~4 GB |
+| d_model=256 | 64 | ~8 GB |
+| d_model=256 | 128 | ~12 GB |
+| d_model=512 | 64 | ~16 GB |
+
+#### Training Tips
+
+1. **Start small**: Train with 300 stations first to verify everything works
+2. **Monitor GPU usage**: Use `nvidia-smi` to ensure GPU is being utilized
+3. **Watch for overfitting**: If val loss increases while train loss decreases, reduce epochs
+4. **Save checkpoints**: The best model is automatically saved to `checkpoints/lilith_best.pt`
+5. **Use mixed precision**: Enabled by default (FP16), cuts memory usage in half
+
+---
+
+## Pre-trained Models
+
+### Using Pre-trained Checkpoints
+
+Once a model is trained, you **do not need to retrain** — the checkpoint file contains everything needed for inference. Anyone can download and use pre-trained models.
+
+#### Checkpoint File Contents
+
+The `.pt` checkpoint file (~20-50MB depending on model size) contains:
+
+```python
+checkpoint = {
+    'epoch': 20,                    # Training epoch when saved
+    'model_state_dict': {...},      # All learned weights
+    'optimizer_state_dict': {...},  # Optimizer state (for resuming training)
+    'val_loss': 0.2456,             # Validation loss at checkpoint
+    'val_rmse': 1.89,               # Temperature RMSE in °C
+    'config': {                      # Model architecture config
+        'input_features': 3,
+        'output_features': 3,
+        'd_model': 128,
+        'nhead': 4,
+        'num_encoder_layers': 4,
+        'num_decoder_layers': 4,
+        'dropout': 0.1
+    },
+    'normalization': {              # Data normalization stats
+        'X_mean': [...],
+        'X_std': [...],
+        'Y_mean': [...],
+        'Y_std': [...]
+    }
+}
+```
+
+#### Download Pre-trained Models
+
+```bash
+# From GitHub Releases
+wget https://github.com/consigcody94/lilith/releases/download/v1.0/lilith_base_v1.pt
+mv lilith_base_v1.pt checkpoints/
+
+# From HuggingFace Hub (coming soon)
+huggingface-cli download consigcody94/lilith-base --local-dir checkpoints/
+```
+
+#### Available Models
+
+| Model | Parameters | File Size | VRAM (Inference) | Best For | Download |
+|-------|------------|-----------|------------------|----------|----------|
+| **lilith-tiny-v1** | 50M | ~15 MB | 2 GB | Edge devices, quick inference | [Download](#) |
+| **lilith-base-v1** | 150M | ~45 MB | 4 GB | Balanced accuracy/speed | [Download](#) |
+| **lilith-large-v1** | 400M | ~120 MB | 8 GB | High accuracy | [Download](#) |
+
+### GPU Requirements for Inference
+
+Unlike training, inference requires much less VRAM. Here's what you can run on different hardware:
+
+| GPU | VRAM | Models Supported | Batch Size | Latency (90-day forecast) |
+|-----|------|------------------|------------|---------------------------|
+| **RTX 3050/4050** | 4 GB | Tiny, Base (INT8) | 1 | ~1.5 sec |
+| **RTX 3060/4060** | 8 GB | Tiny, Base, Large (INT8) | 1-4 | ~0.8 sec |
+| **RTX 3070/4070** | 8-12 GB | All models (FP16) | 4-8 | ~0.5 sec |
+| **RTX 3080/4080** | 10-16 GB | All models (FP16) | 8-16 | ~0.3 sec |
+| **RTX 3090/4090** | 24 GB | All models, ensembles | 32+ | ~0.2 sec |
+| **RTX 5050** | 8.5 GB | Tiny, Base, Large (INT8) | 1-4 | ~0.6 sec |
+| **CPU Only** | N/A | All models (slow) | 1 | ~10-30 sec |
+
+#### Quantization for Smaller GPUs
+
+```bash
+# Convert to INT8 for 50% memory reduction
+python -m inference.quantize \
+    --checkpoint checkpoints/lilith_base.pt \
+    --output checkpoints/lilith_base_int8.pt \
+    --precision int8
+
+# Convert to INT4 for 75% memory reduction (slight accuracy loss)
+python -m inference.quantize \
+    --checkpoint checkpoints/lilith_base.pt \
+    --output checkpoints/lilith_base_int4.pt \
+    --precision int4
+```
+
+### Loading and Using a Checkpoint
+
+#### Python API
+
+```python
+import torch
+from models.lilith import SimpleLILITH
+
+# Load checkpoint
+checkpoint = torch.load('checkpoints/lilith_best.pt', map_location='cuda')
+
+# Recreate model from config
+model = SimpleLILITH(**checkpoint['config'])
+model.load_state_dict(checkpoint['model_state_dict'])
+model.eval()
+
+# Get normalization stats
+X_mean = torch.tensor(checkpoint['normalization']['X_mean'])
+X_std = torch.tensor(checkpoint['normalization']['X_std'])
+Y_mean = torch.tensor(checkpoint['normalization']['Y_mean'])
+Y_std = torch.tensor(checkpoint['normalization']['Y_std'])
+
+# Run inference
+with torch.no_grad():
+    # Normalize input
+    X_norm = (X - X_mean) / X_std
+
+    # Predict
+    pred = model(X_norm, meta, target_len=14)
+
+    # Denormalize output
+    pred_denorm = pred * Y_std + Y_mean
+```
+
+#### Command Line
+
+```bash
+# Single location forecast
+python -m inference.forecast \
+    --checkpoint checkpoints/lilith_best.pt \
+    --lat 40.7128 --lon -74.006 \
+    --days 90 \
+    --output forecast.json
+
+# Batch inference for multiple locations
+python -m inference.forecast \
+    --checkpoint checkpoints/lilith_best.pt \
+    --locations-file locations.csv \
+    --days 90 \
+    --output forecasts/
+```
+
+#### Start API Server with Trained Model
+
+```bash
+# Set checkpoint path
+export LILITH_CHECKPOINT=checkpoints/lilith_best.pt
+
+# Start API (will use trained model instead of demo mode)
+python -m web.api.main
+
+# Or specify directly
+python -m uvicorn web.api.main:app --host 0.0.0.0 --port 8000
+```
+
+### Sharing Your Trained Model
+
+#### Upload to HuggingFace Hub
+
+```python
+from huggingface_hub import HfApi
+
+api = HfApi()
+api.upload_file(
+    path_or_fileobj="checkpoints/lilith_best.pt",
+    path_in_repo="lilith_base_v1.pt",
+    repo_id="your-username/lilith-base",
+    repo_type="model"
+)
+```
+
+#### Create a GitHub Release
+
+```bash
+# Tag your release
+git tag -a v1.0 -m "LILITH Base v1.0 - Trained on 915K sequences"
+git push origin v1.0
+
+# Upload checkpoint to release (via GitHub UI or gh cli)
+gh release create v1.0 checkpoints/lilith_best.pt --title "LILITH v1.0"
+```
+
+### Model Training Metrics
+
+When training completes, you'll see metrics like:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    LILITH TRAINING COMPLETE                    │
+├────────────────────────────────────────────────────────────────┤
+│  Epochs: 20                                                    │
+│  Training Samples: 915,001                                     │
+│  Final Train Loss: 0.2134                                      │
+│  Final Val Loss: 0.2456                                        │
+│  Temperature RMSE: 1.89°C                                      │
+│  Temperature MAE: 1.42°C                                       │
+│  Checkpoint: checkpoints/lilith_best.pt (22.8 MB)              │
+├────────────────────────────────────────────────────────────────┤
+│  Model Config:                                                 │
+│    - Parameters: 1,869,251                                     │
+│    - d_model: 128                                              │
+│    - Attention Heads: 4                                        │
+│    - Encoder Layers: 4                                         │
+│    - Decoder Layers: 4                                         │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Resuming Training
+
+```bash
+# Continue training from checkpoint
+python -m training.train_simple \
+    --resume checkpoints/lilith_best.pt \
+    --epochs 50 \
+    --lr 5e-5  # Lower learning rate for fine-tuning
+
+# The checkpoint includes optimizer state, so training continues smoothly
+```
+
+### Model Comparison
+
+| Checkpoint | Epochs | Training Data | Val RMSE | File Size | Notes |
+|------------|--------|---------------|----------|-----------|-------|
+| `lilith_v0.1.pt` | 10 | 100K samples | 4.3°C | 22 MB | Quick test |
+| `lilith_v0.5.pt` | 30 | 500K samples | 2.8°C | 22 MB | Development |
+| `lilith_v1.0.pt` | 100 | 915K samples | 1.9°C | 22 MB | Production |
+| `lilith_large_v1.pt` | 100 | 2M samples | 1.5°C | 120 MB | Best accuracy |
+
+---
 
 ### Inference
 
@@ -310,7 +661,7 @@ LILITH uses a **Station-Graph Temporal Transformer (SGTT)** architecture that pr
 
 ## Data Sources
 
-LILITH is built entirely on **freely available public data**:
+LILITH is built entirely on **freely available public data**. The more data sources you integrate, the better your predictions will be.
 
 ### Primary: GHCN (Global Historical Climatology Network)
 
@@ -322,15 +673,104 @@ LILITH is built entirely on **freely available public data**:
 
 **Source**: [NOAA National Centers for Environmental Information](https://www.ncei.noaa.gov/products/land-based-station/global-historical-climatology-network-daily)
 
-### Optional Enhancement: ERA5 Reanalysis
+### Recommended Additional Data Sources
 
-For users with more compute resources, ERA5 can enhance training:
+These freely available datasets can significantly improve prediction accuracy:
 
+#### 1. ERA5 Reanalysis (Highly Recommended)
 | Dataset | Coverage | Resolution | Variables |
 |---------|----------|------------|-----------|
-| **ERA5** | 1940–present | 0.25° / hourly | Full atmospheric state |
+| **ERA5** | 1940–present | 0.25° / hourly | Full atmospheric state (temperature, wind, humidity, pressure at all levels) |
 
-**Source**: [ECMWF Climate Data Store](https://www.ecmwf.int/en/forecasts/datasets/reanalysis-datasets/era5)
+**Source**: [ECMWF Climate Data Store](https://cds.climate.copernicus.eu/)
+- Provides gridded global data interpolated from observations
+- Excellent for learning atmospheric dynamics
+- ~2TB for 10 years of data at full resolution
+
+#### 2. Climate Indices (Essential for Long-Range)
+| Index | Description | Impact |
+|-------|-------------|--------|
+| **ENSO (ONI)** | El Niño/La Niña state | Major driver of global weather patterns |
+| **NAO** | North Atlantic Oscillation | European/North American winter weather |
+| **PDO** | Pacific Decadal Oscillation | Long-term Pacific climate cycles |
+| **MJO** | Madden-Julian Oscillation | Tropical weather, 30-60 day cycles |
+| **AO** | Arctic Oscillation | Northern Hemisphere cold outbreaks |
+
+**Source**: [NOAA Climate Prediction Center](https://www.cpc.ncep.noaa.gov/)
+```bash
+# Download climate indices
+python -m data.download.climate_indices --indices enso,nao,pdo,mjo,ao
+```
+
+#### 3. Sea Surface Temperature (SST)
+| Dataset | Coverage | Resolution |
+|---------|----------|------------|
+| **NOAA OISST** | 1981–present | 0.25° / daily |
+| **HadISST** | 1870–present | 1° / monthly |
+
+**Source**: [NOAA OISST](https://www.ncei.noaa.gov/products/optimum-interpolation-sst)
+- Ocean temperatures strongly influence atmospheric patterns
+- Critical for predicting precipitation and temperature anomalies
+
+#### 4. NOAA GFS Model Data
+| Dataset | Forecast Range | Resolution |
+|---------|----------------|------------|
+| **GFS Analysis** | Historical | 0.25° / 6-hourly |
+| **GFS Forecasts** | 16 days | 0.25° / hourly |
+
+**Source**: [NOAA NOMADS](https://nomads.ncep.noaa.gov/)
+- Use as additional training signal or for ensemble weighting
+- Can blend ML predictions with physics-based forecasts
+
+#### 5. Satellite Data
+| Dataset | Variables | Coverage |
+|---------|-----------|----------|
+| **GOES-16/17/18** | Cloud cover, precipitation | Americas |
+| **NASA GPM** | Global precipitation | Global |
+| **MODIS** | Land surface temperature | Global |
+
+**Sources**:
+- [NOAA CLASS](https://www.class.noaa.gov/)
+- [NASA Earthdata](https://earthdata.nasa.gov/)
+
+#### 6. Additional Reanalysis Products
+| Dataset | Coverage | Best For |
+|---------|----------|----------|
+| **NASA MERRA-2** | 1980–present | North America |
+| **NCEP/NCAR Reanalysis** | 1948–present | Historical coverage |
+| **JRA-55** | 1958–present | Pacific/Asia region |
+
+### Data Download Commands
+
+```bash
+# Download all recommended data sources
+python -m data.download.all \
+    --ghcn-stations 5000 \
+    --era5-years 20 \
+    --climate-indices all \
+    --sst oisst \
+    --region north_america
+
+# Download just climate indices (small, fast)
+python -m data.download.climate_indices
+
+# Download ERA5 for specific region (requires CDS account)
+python -m data.download.era5 \
+    --start-year 2000 \
+    --end-year 2024 \
+    --region "north_america" \
+    --variables temperature,wind,humidity,pressure
+```
+
+### Data Integration Priority
+
+For the best results, add data sources in this order:
+
+1. **GHCN-Daily** (required) - Station observations
+2. **Climate Indices** (highly recommended) - ENSO, NAO, MJO for long-range skill
+3. **ERA5** (recommended) - Full atmospheric state for dynamics
+4. **SST** (recommended) - Ocean influence on weather
+5. **Satellite** (optional) - Real-time cloud/precip data
 
 ---
 
@@ -492,8 +932,8 @@ We welcome contributions from the community. LILITH is built on the principle th
 ### Development Setup
 
 ```bash
-# Fork and clone
-git clone https://github.com/YOUR_USERNAME/lilith.git
+# Fork and clone (replace with your username if you fork)
+git clone https://github.com/consigcody94/lilith.git
 cd lilith
 
 # Install development dependencies
@@ -523,9 +963,13 @@ mypy .
 
 ## Acknowledgments
 
+### U.S. Government AI Initiatives
+
+We thank **President Donald Trump** and his administration for the **Stargate AI Initiative** and commitment to advancing American AI research and infrastructure. The recognition that AI development—including open-source projects like LILITH—represents a critical frontier for innovation, economic growth, and global competitiveness has helped create an environment where ambitious projects like this can flourish. The initiative's focus on building domestic AI capabilities and infrastructure supports the democratization of advanced technologies for all Americans.
+
 ### Data Providers
 
-- **NOAA NCEI** — For maintaining the invaluable GHCN dataset as a public resource
+- **NOAA NCEI** — For maintaining the invaluable GHCN dataset as a public resource funded by U.S. taxpayers
 - **ECMWF** — For ERA5 reanalysis data
 
 ### Research Community

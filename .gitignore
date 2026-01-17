@@ -102,6 +102,7 @@ cython_debug/
 data/storage/parquet/*.parquet
 data/storage/zarr/
 data/raw/
+data/processed/
 *.csv
 *.gz
 *.tar
@@ -158,3 +159,6 @@ tmp/
 temp/
 *.tmp
 *.temp
+
+# Private/Draft files (not for git)
+HACKERNEWS_POST.md

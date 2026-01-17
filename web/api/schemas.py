@@ -170,3 +170,117 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional details")
+
+
+# ===== Hourly Forecast Schemas =====
+
+class HourlyForecast(BaseModel):
+    """Single hour forecast."""
+
+    datetime: str = Field(..., description="Forecast datetime (ISO 8601)")
+    hour: int = Field(..., ge=0, le=23, description="Hour of day (0-23)")
+    temperature: float = Field(..., description="Temperature (°C)")
+    feels_like: float = Field(..., description="Feels like temperature (°C)")
+    humidity: float = Field(..., ge=0, le=100, description="Relative humidity (%)")
+    precipitation: float = Field(..., ge=0, description="Precipitation (mm)")
+    precipitation_probability: float = Field(..., ge=0, le=1, description="Probability of precipitation")
+    wind_speed: float = Field(..., ge=0, description="Wind speed (m/s)")
+    wind_direction: float = Field(..., ge=0, le=360, description="Wind direction (degrees)")
+    cloud_cover: float = Field(..., ge=0, le=100, description="Cloud cover (%)")
+    pressure: float = Field(..., description="Atmospheric pressure (hPa)")
+    uv_index: Optional[float] = Field(None, ge=0, description="UV index")
+
+    # Uncertainty
+    temperature_lower: Optional[float] = Field(None, description="Lower bound of temperature")
+    temperature_upper: Optional[float] = Field(None, description="Upper bound of temperature")
+
+
+class HourlyForecastRequest(BaseModel):
+    """Request for hourly forecast."""
+
+    latitude: float = Field(..., ge=-90, le=90, description="Latitude in degrees")
+    longitude: float = Field(..., ge=-180, le=180, description="Longitude in degrees")
+    hours: int = Field(48, ge=1, le=168, description="Number of hours to forecast (max 7 days)")
+    include_uncertainty: bool = Field(True, description="Include uncertainty bounds")
+
+
+class HourlyForecastResponse(BaseModel):
+    """Hourly forecast response."""
+
+    location: Location = Field(..., description="Forecast location")
+    generated_at: datetime = Field(..., description="Generation timestamp")
+    model_version: str = Field(..., description="Model version used")
+    forecast_hours: int = Field(..., description="Number of forecast hours")
+    forecasts: List[HourlyForecast] = Field(..., description="Hourly forecasts")
+    daily_summary: Optional[DailyForecast] = Field(None, description="Summary for first day")
+
+
+# ===== Prediction Accuracy Schemas =====
+
+class PredictionRecord(BaseModel):
+    """Stored prediction for accuracy tracking."""
+
+    id: str = Field(..., description="Unique prediction ID")
+    location: Location = Field(..., description="Forecast location")
+    location_name: Optional[str] = Field(None, description="Location name")
+    predicted_at: datetime = Field(..., description="When prediction was made")
+    target_date: str = Field(..., description="Date being predicted (YYYY-MM-DD)")
+
+    # Predictions
+    predicted_temp_max: float = Field(..., description="Predicted max temperature")
+    predicted_temp_min: float = Field(..., description="Predicted min temperature")
+    predicted_precipitation: float = Field(..., description="Predicted precipitation")
+    predicted_precip_prob: float = Field(..., description="Predicted precipitation probability")
+
+    # Actual observations (filled in once available)
+    actual_temp_max: Optional[float] = Field(None, description="Actual max temperature")
+    actual_temp_min: Optional[float] = Field(None, description="Actual min temperature")
+    actual_precipitation: Optional[float] = Field(None, description="Actual precipitation")
+
+    # Accuracy metrics (calculated once actuals are available)
+    temp_max_error: Optional[float] = Field(None, description="Max temp prediction error")
+    temp_min_error: Optional[float] = Field(None, description="Min temp prediction error")
+    precip_error: Optional[float] = Field(None, description="Precipitation prediction error")
+    lead_days: int = Field(..., description="Days ahead this was predicted")
+
+
+class AccuracyStats(BaseModel):
+    """Aggregated accuracy statistics."""
+
+    total_predictions: int = Field(..., description="Total predictions tracked")
+    verified_predictions: int = Field(..., description="Predictions with actuals")
+
+    # Temperature accuracy
+    temp_max_mae: float = Field(..., description="Mean Absolute Error for max temp (°C)")
+    temp_max_rmse: float = Field(..., description="Root Mean Square Error for max temp (°C)")
+    temp_min_mae: float = Field(..., description="Mean Absolute Error for min temp (°C)")
+    temp_min_rmse: float = Field(..., description="Root Mean Square Error for min temp (°C)")
+
+    # Precipitation accuracy
+    precip_mae: float = Field(..., description="Mean Absolute Error for precipitation (mm)")
+    precip_accuracy: float = Field(..., description="Precipitation occurrence accuracy (%)")
+
+    # By lead time
+    accuracy_by_lead_day: Dict[int, Dict[str, float]] = Field(
+        ..., description="Accuracy metrics broken down by forecast lead time"
+    )
+
+
+class AccuracyReportRequest(BaseModel):
+    """Request for accuracy report."""
+
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Filter by latitude")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Filter by longitude")
+    days_back: int = Field(30, ge=1, le=365, description="Number of days to look back")
+    location_name: Optional[str] = Field(None, description="Filter by location name")
+
+
+class AccuracyReportResponse(BaseModel):
+    """Accuracy report response."""
+
+    generated_at: datetime = Field(..., description="Report generation timestamp")
+    period_start: str = Field(..., description="Start of analysis period")
+    period_end: str = Field(..., description="End of analysis period")
+    stats: AccuracyStats = Field(..., description="Aggregated statistics")
+    recent_predictions: List[PredictionRecord] = Field(..., description="Recent prediction records")
+    location_filter: Optional[str] = Field(None, description="Location filter applied")
