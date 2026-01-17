@@ -16,7 +16,7 @@
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+"></a>
   <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.1+-ee4c2c.svg" alt="PyTorch"></a>
-  <a href="https://github.com/fowlb/lilith/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg" alt="Build"></a>
+  <a href="https://github.com/consigcody94/lilith/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg" alt="Build"></a>
 </p>
 
 <p align="center">
@@ -120,7 +120,7 @@ LILITH takes a different approach:
 
 ```bash
 # Clone the repository
-git clone https://github.com/fowlb/lilith.git
+git clone https://github.com/consigcody94/lilith.git
 cd lilith
 
 # Create and activate virtual environment
@@ -572,7 +572,7 @@ If you use LILITH in your research, please cite:
   author = {LILITH Contributors},
   title = {LILITH: Long-range Intelligent Learning for Integrated Trend Hindcasting},
   year = {2025},
-  url = {https://github.com/fowlb/lilith}
+  url = {https://github.com/consigcody94/lilith}
 }
 ```
 
