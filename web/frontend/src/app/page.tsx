@@ -72,17 +72,6 @@ export default function Home() {
 
             {/* Controls - Right side */}
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Command Center Link */}
-              <Link
-                href="/stations"
-                className="group flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-purple-500/10 to-cyan-500/10 hover:from-purple-500/20 hover:to-cyan-500/20 border border-purple-500/20 hover:border-purple-400/40 rounded-xl text-purple-300 hover:text-purple-200 transition-all duration-300 text-sm font-medium"
-              >
-                <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                <span className="hidden sm:inline">Command Center</span>
-              </Link>
-
               {/* Temperature Unit Toggle */}
               <div className="flex bg-white/[0.06] backdrop-blur-sm rounded-xl p-1 border border-white/[0.08]">
                 <button
@@ -368,15 +357,6 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Link
-                    href="/stations"
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-purple-300/80 hover:text-purple-300 hover:bg-purple-500/10 transition-all duration-300"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                    Command Center
-                  </Link>
-                  <Link
                     href="/historical"
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white/50 hover:text-white hover:bg-white/[0.05] transition-all duration-300"
                   >
@@ -452,7 +432,7 @@ export default function Home() {
             </div>
           </footer>
         </div>
-      </div>
-    </main>
+      </div >
+    </main >
   );
 }

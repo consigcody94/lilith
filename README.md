@@ -968,10 +968,6 @@ Generate a weather forecast for a location.
 }
 ```
 
-#### `GET /v1/stations`
-
-List available GHCN stations.
-
 #### `GET /v1/historical/{station_id}`
 
 Retrieve historical observations for a station.
@@ -1129,7 +1125,6 @@ If you don't want to set up API keys, the app will still work but with limited f
 | Feature | With API Key | Without API Key |
 |---------|--------------|-----------------|
 | ML Forecasts | ✅ Full functionality | ✅ Full functionality |
-| Station Weather | ✅ Live data | ❌ No data displayed |
 | Fallback Forecasts | ✅ OWM-based | ❌ Error if model not loaded |
 
 ### Data Directory Structure
